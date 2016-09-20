@@ -33,20 +33,22 @@ Type objective_function<Type>::operator() ()
   //////////////////////////////////////////////////
 
   // Data
-  DATA_ARRAY(Catch_data_N);          // Data array of dimensions n_years x n_populations x n_weight_class
-  DATA_ARRAY(Catch_data_Kg);         // Data array of dimensions n_years x n_populations x n_weight_class
-  DATA_ARRAY(prop_fem);              // Data array of dimensions n_years x n_populations x n_weight_class
-  DATA_ARRAY(logit_P_catch_mean);    // Prior array of dimensions n_years x n_populations x n_weight_class
-  DATA_ARRAY(logit_P_catch_SE);      // Prior array of dimensions n_years x n_populations x n_weight_class
-  //DATA_ARRAY(logit_P_SeaAge1_mean);   // Prior for probability of a fish to have sea age 1
-  //DATA_ARRAY(logit_P_SeaAge1_SE);
-  //DATA_ARRAY(logit_P_SeaAge2_mean);   // Prior for probability of a fish to have sea age 2
-  //DATA_ARRAY(logit_P_SeaAge2_SE);
-
-  // Parameters
-  PARAMETER(lnSigma_lnN); // Residual variance
+  DATA_ARRAY(Nfem_VR_data);          // Data array of dimensions n_years x n_populations x n_weight_class
+  DATA_ARRAY(lnNfem_SE_VR_data);     // Data array of dimensions n_years x n_populations x n_weight_class
+  DATA_ARRAY(mean_kg_VR_data);       // Data array of dimensions n_years x n_populations x n_weight_class
+  DATA_ARRAY(Nfem_catched_VR_data);  // Data array of dimensions n_years x n_populations x n_weight_class
 
   int n_class_data = 3;      //number of sea age categories in the data
+
+  for(t=0;t<n_t;t++){
+    for(i=0;i<n_pop;i++){
+      jnll -= dnorm(log(Nfem_VR_data(t, i, 0) + Type(1.0)), log(N_ad(t,i,0) + Type(1.0)), lnNfem_SE_VR_data(t,i,0), true);
+      // I add 1.0 to the data to avoid log of zero. Not sure if this matters too much, as lnNfem_SE is independent of Nfem.
+    }}
+
+
+
+  /*
 
   // Random effects
   //PARAMETER_ARRAY(logit_P_catch);       // Probability of being catched, array of dimensions n_years x n_populations x n_weight_class
@@ -76,15 +78,14 @@ Type objective_function<Type>::operator() ()
 
   // Number of adults
   array<Type> N_female_adults_observed(n_t, n_pop, n_class_data);
-  array<Type> N_female_spawners_observed(n_t, n_pop, n_class_data);
+  //array<Type> N_female_spawners_observed(n_t, n_pop, n_class_data);
   for(t=0;t<n_t;t++){
     for(i=0;i<n_pop;i++){
       for(j=0;j<n_class_data;j++){
-        N_female_adults_observed(t,i,j) = Catch_data_N(t,i,j) * (1/P_catch(t,i,j)) * prop_fem(t,i,j);
-        N_female_spawners_observed(t,i,j) = Catch_data_N(t,i,j);//N_female_adults_observed(t,i,j) - Catch_data_N(t,i,j) * prop_fem(t,i,j);
+        N_female_adults_observed(t,i,j) = Catch_data_N(t,i,j);//  * (1/P_catch(t,i,j)) * prop_fem(t,i,j);
+        //N_female_spawners_observed(t,i,j) = N_female_adults_observed(t,i,j) - Catch_data_N(t,i,j) * prop_fem(t,i,j);
       }}}
 
-/*
   // Number of egg from the average weight of the adults
   array<Type> mean_kg_observed(n_t, n_pop, n_class);
   matrix<Type> N_egg(n_t, n_pop);
@@ -96,28 +97,27 @@ Type objective_function<Type>::operator() ()
       N_egg(t,i) += mean_kg_observed(t,i,0)*Type(1450.0)*(Type(1.0)*N_ad(t,i,0)+Type(0.0)*N_ad(t,i,1));
       N_egg(t,i) += mean_kg_observed(t,i,1)*Type(1450.0)*(Type(0.0)*N_ad(t,i,0)+Type(1.0)*N_ad(t,i,1));
     }}
-*/
 
   // Residual log likelihood           // TODO: include a residual for mean kg?
   // NB! so far I use constants to attribute weight classes to sea age classes, TODO: use priors instead and maybe use data
   // I also add 1.0 to avid log transformation of zeros, I think I can skip tis, or use GLM!
   for(t=0;t<n_t;t++){
     for(i=0;i<n_pop;i++){
-      jnll -= dnorm(log(N_female_spawners_observed(t, i, 0) + Type(1.0)), lnN_ad(t,i,0), exp(lnSigma_lnN), true);
+      jnll -= dnorm(log(N_female_adults_observed(t, i, 0) + Type(1.0)), lnN_ad(t,i,0), exp(lnSigma_lnN), true);
       //jnll -= dnorm(log(N_female_spawners_observed(t, i, 1) + Type(1.0)), lnN_ad(t,i,1), exp(lnSigma_lnN), true);
       //jnll -= dnorm(log(N_female_spawners_observed(t, i, 0) + Type(1.0)), log(Type(1.0)*N_ad(t,i,0) + Type(0.0)*N_ad(t,i,1) + Type(1.0)), exp(lnSigma_lnN), true);
       //jnll -= dnorm(log(N_female_spawners_observed(t, i, 1) + N_female_spawners_observed(t, i, 2) + Type(1.0)), log(Type(0.0)*N_ad(t,i,0) + Type(1.0)*N_ad(t,i,1) + Type(1.0)), exp(lnSigma_lnN), true);
     }}
 
 
-
+*/
 
   /////////////////////////////////
   //////// Process model //////////
   /////////////////////////////////
 
   PARAMETER(lnSD_lnN_add_residual);
-  PARAMETER(logitP_sea0Tad_mean);        Type P_sea0Tad_mean   = exp(logitP_sea0Tad_mean)/(1+exp(logitP_sea0Tad_mean));
+  PARAMETER(logitP_sea0Tad_mean);        Type P_sea0Tad_mean   = exp(logitP_sea0Tad_mean);//(1+exp(logitP_sea0Tad_mean));
   //PARAMETER(logitP_sea1Tad_mean);        Type P_sea1Tad_mean   = exp(logitP_sea1Tad_mean)/(1+exp(logitP_sea1Tad_mean));
 
 
