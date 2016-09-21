@@ -40,12 +40,26 @@ Type objective_function<Type>::operator() ()
 
   int n_class_data = 3;      //number of sea age categories in the data
 
+  // Observation model for
   for(t=0;t<n_t;t++){
     for(i=0;i<n_pop;i++){
       jnll -= dnorm(log(Nfem_VR_data(t, i, 0) + Type(1.0)), log(N_ad(t,i,0) + Type(1.0)), lnNfem_SE_VR_data(t,i,0), true);
       // I add 1.0 to the data to avoid log of zero. Not sure if this matters too much, as lnNfem_SE is independent of Nfem.
     }}
 
+  // Observation model for mean_kg
+  // So far I just use the raw estimates, but I shuld be able to get SE on these, based on P and N of each weight class
+  array<Type> mean_kg = mean_kg_VR_data;
+
+  // Calculating number of egg
+  matrix<Type> N_egg(n_t, n_pop);
+  N_egg.fill(0.0);
+  for(t=0;t<n_t;t++){
+    for(i=0;i<n_pop;i++){
+      N_egg(t,i) += mean_kg_VR_data(t,i,0)*Type(1450.0)*N_ad(t,i,0);
+      //N_egg(t,i) += mean_kg_observed(t,i,0)*Type(1450.0)*(Type(1.0)*N_ad(t,i,0)+Type(0.0)*N_ad(t,i,1));
+      //N_egg(t,i) += mean_kg_observed(t,i,1)*Type(1450.0)*(Type(0.0)*N_ad(t,i,0)+Type(1.0)*N_ad(t,i,1));
+    }}
 
 
   /*
@@ -116,23 +130,50 @@ Type objective_function<Type>::operator() ()
   //////// Process model //////////
   /////////////////////////////////
 
-  PARAMETER(lnSD_lnN_add_residual);
-  PARAMETER(logitP_sea0Tad_mean);        Type P_sea0Tad_mean   = exp(logitP_sea0Tad_mean);//(1+exp(logitP_sea0Tad_mean));
+
+  // Fixed effects (means)
+  PARAMETER(logitP_eggTriv_mean);        Type P_eggTriv_mean   = exp(logitP_eggTriv_mean)/(1+exp(logitP_eggTriv_mean));
+  PARAMETER(logitP_rivTriv_mean);        Type P_rivTriv_mean   = exp(logitP_rivTriv_mean)/(1+exp(logitP_rivTriv_mean));
+  //PARAMETER(logitP_rivTsea0_mean);       Type P_rivTsea0_mean  = exp(logitP_rivTsea0_mean)/(1+exp(logitP_rivTsea0_mean));
+  //PARAMETER(logitP_sea0Tsea1_mean);      Type P_sea0Tsea1_mean = exp(logitP_sea0Tsea1_mean)/(1+exp(logitP_sea0Tsea1_mean));
+  //PARAMETER(logitP_sea1Tsea1_mean);      Type P_sea1Tsea1_mean = exp(logitP_sea1Tsea1_mean)/(1+exp(logitP_sea1Tsea1_mean));
+  PARAMETER(logitP_sea0Tad_mean);        Type P_sea0Tad_mean   = exp(logitP_sea0Tad_mean)/(1+exp(logitP_sea0Tad_mean));
   //PARAMETER(logitP_sea1Tad_mean);        Type P_sea1Tad_mean   = exp(logitP_sea1Tad_mean)/(1+exp(logitP_sea1Tad_mean));
+
+  // Fixed effects (variances)
+  PARAMETER(lnSD_lnN_riv_residual);
+  //PARAMETER(lnSD_lnN_sea0_residual);
+  //PARAMETER(lnSD_lnN_sea1_residual);
+  PARAMETER(lnSD_lnN_add_residual);
+
+  // Random effects
+  PARAMETER_MATRIX(lnN_riv);
+  //PARAMETER_MATRIX(lnN_sea0);
+  //PARAMETER_MATRIX(lnN_sea1);
+
+
 
 
   Type expectation=0;
 
   for(t=1;t<n_t;t++){
     for(i=0;i<n_pop;i++){
+      // River
+      expectation = N_egg(t-1,i) * P_eggTriv_mean // * P_eggTriv_t(t-1) * P_eggTriv_pop(i)
+                   + exp(lnN_riv(t-1,i)) * P_rivTriv_mean; // * P_rivTriv_t(t-1) * P_rivTriv_pop(i);
+      jnll -= dnorm(lnN_riv(t,i), log(expectation), exp(lnSD_lnN_riv_residual), true);
+
       // Sea age 1:
-      expectation = N_ad(t-1,i,0) * P_sea0Tad_mean;  // * P_sea0Tad_t(t-1) * P_sea0Tad_pop(i) ;
+      expectation = exp(lnN_riv(t-1,i)) * P_sea0Tad_mean;  // * P_sea0Tad_t(t-1) * P_sea0Tad_pop(i) ;
       jnll -= dnorm(lnN_ad(t,i,0), log(expectation), exp(lnSD_lnN_add_residual), true);
 
       // Sea age 2:
       //N_ad(t,i,1) = N_ad(t-1,i,1) * P_sea1Tad_mean;  // * P_sea1Tad_t(t-1) * P_sea1Tad_pop(i);
       //jnll -= dnorm(lnN_ad(t,i,1), log(expectation), exp(lnSD_lnN_add_residual), true);
     }}
+
+
+
 
 
   /*
