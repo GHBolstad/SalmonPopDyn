@@ -132,40 +132,48 @@ Type objective_function<Type>::operator() ()
 
 
   // Fixed effects (means)
-  PARAMETER(logitP_eggTriv_mean);        Type P_eggTriv_mean   = exp(logitP_eggTriv_mean)/(1+exp(logitP_eggTriv_mean));
-  PARAMETER(logitP_rivTriv_mean);        Type P_rivTriv_mean   = exp(logitP_rivTriv_mean)/(1+exp(logitP_rivTriv_mean));
-  //PARAMETER(logitP_rivTsea0_mean);       Type P_rivTsea0_mean  = exp(logitP_rivTsea0_mean)/(1+exp(logitP_rivTsea0_mean));
-  //PARAMETER(logitP_sea0Tsea1_mean);      Type P_sea0Tsea1_mean = exp(logitP_sea0Tsea1_mean)/(1+exp(logitP_sea0Tsea1_mean));
-  //PARAMETER(logitP_sea1Tsea1_mean);      Type P_sea1Tsea1_mean = exp(logitP_sea1Tsea1_mean)/(1+exp(logitP_sea1Tsea1_mean));
-  PARAMETER(logitP_sea0Tad_mean);        Type P_sea0Tad_mean   = exp(logitP_sea0Tad_mean)/(1+exp(logitP_sea0Tad_mean));
-  //PARAMETER(logitP_sea1Tad_mean);        Type P_sea1Tad_mean   = exp(logitP_sea1Tad_mean)/(1+exp(logitP_sea1Tad_mean));
+  PARAMETER(logitP_egg_riv_mean);        Type P_egg_riv_mean   = exp(logitP_egg_riv_mean)/(1+exp(logitP_egg_riv_mean));
+  PARAMETER(logitP_riv_riv_mean);        Type P_riv_riv_mean   = exp(logitP_riv_riv_mean)/(1+exp(logitP_riv_riv_mean));
+  PARAMETER(logitP_riv_sea1_mean);       Type P_riv_sea1_mean   = exp(logitP_riv_sea1_mean)/(1+exp(logitP_riv_sea1_mean));
 
   // Fixed effects (variances)
-  PARAMETER(lnSD_lnN_riv_residual);
-  //PARAMETER(lnSD_lnN_sea0_residual);
-  //PARAMETER(lnSD_lnN_sea1_residual);
   PARAMETER(lnSD_lnN_add_residual);
 
   // Random effects
-  PARAMETER_MATRIX(lnN_riv);
-  //PARAMETER_MATRIX(lnN_sea0);
-  //PARAMETER_MATRIX(lnN_sea1);
+  //PARAMETER_MATRIX(lnN_riv);
+
+  // Starting values
+  PARAMETER_VECTOR(lnN_riv_start);
+  matrix<Type> N_riv(n_t, n_pop);
+  for(i=0;i<n_pop;i++){
+    N_riv(0,i) = exp(lnN_riv_start(i));
+  }
+
+  // Defining variables
+  matrix<Type> N_egg_surviving(n_t-1, n_pop);
+  matrix<Type> N_staying_in_river(n_t-1, n_pop);
+  matrix<Type> N_sea1_surviving(n_t-1, n_pop);
 
 
 
+  ///// Priors ////
+  jnll -= dnorm(logitP_egg_riv_mean, Type(-7.0), Type(0.5), true);
 
   Type expectation=0;
 
   for(t=1;t<n_t;t++){
     for(i=0;i<n_pop;i++){
       // River
-      expectation = N_egg(t-1,i) * P_eggTriv_mean // * P_eggTriv_t(t-1) * P_eggTriv_pop(i)
-                   + exp(lnN_riv(t-1,i)) * P_rivTriv_mean; // * P_rivTriv_t(t-1) * P_rivTriv_pop(i);
-      jnll -= dnorm(lnN_riv(t,i), log(expectation), exp(lnSD_lnN_riv_residual), true);
+      N_egg_surviving(t-1, i) = N_egg(t-1,i) * P_egg_riv_mean; // * P_eggTriv_t(t-1) * P_eggTriv_pop(i)
+      N_staying_in_river(t-1, i) = N_riv(t-1,i) * P_riv_riv_mean; // * P_rivTriv_t(t-1) * P_rivTriv_pop(i);
+      N_riv(t,i) = N_egg_surviving(t-1, i) + N_staying_in_river(t-1, i);
 
-      // Sea age 1:
-      expectation = exp(lnN_riv(t-1,i)) * P_sea0Tad_mean;  // * P_sea0Tad_t(t-1) * P_sea0Tad_pop(i) ;
-      jnll -= dnorm(lnN_ad(t,i,0), log(expectation), exp(lnSD_lnN_add_residual), true);
+      // Sea 1
+      //N_sea1_surviving(t-1, i) = (N_riv(t-1,i)-N_staying_in_river(t-1, i)) * P_riv_ad1_mean;  // NOT WORKING!!!
+      N_sea1_surviving(t-1, i) = N_riv(t-1,i) * P_riv_sea1_mean;  // * P_riv_ad1_t(t-1) * P_riv_ad1_pop(i) ;
+
+      // Adults returning sea age 1
+      jnll -= dnorm(lnN_ad(t,i,0), log(N_sea1_surviving(t-1, i)), exp(lnSD_lnN_add_residual), true);
 
       // Sea age 2:
       //N_ad(t,i,1) = N_ad(t-1,i,1) * P_sea1Tad_mean;  // * P_sea1Tad_t(t-1) * P_sea1Tad_pop(i);
