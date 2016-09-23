@@ -6,7 +6,7 @@ Type objective_function<Type>::operator() ()
   // DATA
   DATA_INTEGER(n_t);    //maybe change this to start year and end year?
   DATA_INTEGER(n_pop);
-  int n_class = 1;      //number of sea age categories in the model
+  int n_class = 2;      //number of sea age categories in the model
 
   // Latent variables:
   PARAMETER_ARRAY(lnN_ad); //Number of adult female spawners
@@ -38,14 +38,27 @@ Type objective_function<Type>::operator() ()
   DATA_ARRAY(mean_kg_VR_data);       // Data array of dimensions n_years x n_populations x n_weight_class
   DATA_ARRAY(Nfem_catched_VR_data);  // Data array of dimensions n_years x n_populations x n_weight_class
 
-  int n_class_data = 3;      //number of sea age categories in the data
+  // not needed: int n_class_data = 3;      //number of sea age categories in the data
 
-  // Observation model for
+  // Priors for initial population sizes
+  for(i=0;i<n_pop;i++){
+    jnll -= dnorm(log(N_ad(0,i,0) + Type(1.0)), log(Nfem_VR_data(0, i, 0) + Type(1.0)), lnNfem_SE_VR_data(0,i,0), true);
+    jnll -= dnorm(log(N_ad(0,i,1) + Type(1.0)), log(Nfem_VR_data(0, i, 1) + Type(1.0)), lnNfem_SE_VR_data(0,i,1), true);
+    jnll -= dnorm(log(N_ad(1,i,1) + Type(1.0)), log(Nfem_VR_data(1, i, 1) + Type(1.0)), lnNfem_SE_VR_data(1,i,1)/Type(100.0), true);
+  }
+
+  // Observation model for Nfem
   for(t=0;t<n_t;t++){
     for(i=0;i<n_pop;i++){
-      jnll -= dnorm(log(Nfem_VR_data(t, i, 0) + Type(1.0)), log(N_ad(t,i,0) + Type(1.0)), lnNfem_SE_VR_data(t,i,0), true);
-      // I add 1.0 to the data to avoid log of zero. Not sure if this matters too much, as lnNfem_SE is independent of Nfem.
+        jnll -= dnorm(log(Nfem_VR_data(t, i, 0) + Type(1.0)), log(N_ad(t,i,0) + Type(1.0)), lnNfem_SE_VR_data(t,i,0), true);
+        // I add 1.0 to the data to avoid log of zero. Not sure if this matters too much, as lnNfem_SE is independent of Nfem.
+      }}
+
+  for(t=1;t<n_t;t++){
+    for(i=0;i<n_pop;i++){
+      jnll -= dnorm(log(Nfem_VR_data(t, i, 1) + Type(1.0)), log(N_ad(t,i,1) + Type(1.0)), lnNfem_SE_VR_data(t,i,1), true);
     }}
+
 
   // Observation model for mean_kg
   // So far I just use the raw estimates, but I shuld be able to get SE on these, based on P and N of each weight class
@@ -57,6 +70,7 @@ Type objective_function<Type>::operator() ()
   for(t=0;t<n_t;t++){
     for(i=0;i<n_pop;i++){
       N_egg(t,i) += mean_kg_VR_data(t,i,0)*Type(1450.0)*N_ad(t,i,0);
+      N_egg(t,i) += mean_kg_VR_data(t,i,1)*Type(1450.0)*N_ad(t,i,1);
       //N_egg(t,i) += mean_kg_observed(t,i,0)*Type(1450.0)*(Type(1.0)*N_ad(t,i,0)+Type(0.0)*N_ad(t,i,1));
       //N_egg(t,i) += mean_kg_observed(t,i,1)*Type(1450.0)*(Type(0.0)*N_ad(t,i,0)+Type(1.0)*N_ad(t,i,1));
     }}
@@ -135,12 +149,17 @@ Type objective_function<Type>::operator() ()
   PARAMETER(logitP_egg_riv_mean);        Type P_egg_riv_mean   = exp(logitP_egg_riv_mean)/(1+exp(logitP_egg_riv_mean));
   PARAMETER(logitP_riv_riv_mean);        Type P_riv_riv_mean   = exp(logitP_riv_riv_mean)/(1+exp(logitP_riv_riv_mean));
   PARAMETER(logitP_riv_sea1_mean);       Type P_riv_sea1_mean   = exp(logitP_riv_sea1_mean)/(1+exp(logitP_riv_sea1_mean));
+  PARAMETER(logitP_sea1_ad_mean);        Type P_sea1_ad_mean   = exp(logitP_sea1_ad_mean)/(1+exp(logitP_sea1_ad_mean));
+  PARAMETER(logitP_sea1_sea2_mean);      Type P_sea1_sea2_mean   = exp(logitP_sea1_sea2_mean)/(1+exp(logitP_sea1_sea2_mean));
 
   // Fixed effects (variances)
   PARAMETER(lnSD_lnN_add_residual);
+  PARAMETER(lnSD_logitP_sea1_ad_pop);
 
   // Random effects
-  //PARAMETER_MATRIX(lnN_riv);
+  PARAMETER_VECTOR(logitP_sea1_ad_pop);
+
+
 
   // Starting values
   PARAMETER_VECTOR(lnN_riv_start);
@@ -153,34 +172,62 @@ Type objective_function<Type>::operator() ()
   matrix<Type> N_egg_surviving(n_t-1, n_pop);
   matrix<Type> N_staying_in_river(n_t-1, n_pop);
   matrix<Type> N_sea1_surviving(n_t-1, n_pop);
+  matrix<Type> N_sea2_surviving(n_t-2, n_pop);
 
+  matrix<Type> logitP_sea1_ad(n_t-1, n_pop);
 
 
   ///// Priors ////
-  jnll -= dnorm(logitP_egg_riv_mean, Type(-7.0), Type(0.5), true);
+  jnll -= dnorm(logitP_egg_riv_mean, Type(-6.0), Type(0.5), true);
+  jnll -= dnorm(logitP_riv_riv_mean, Type(5.0), Type(0.5), true);
 
   Type expectation=0;
 
+  //// Model ///
+
+  // River and Sea 1
   for(t=1;t<n_t;t++){
     for(i=0;i<n_pop;i++){
+      // A new idea:
+      // Make sea1 and sea2 a direct function of N_riv, but make a probability section first
+      // where so that the relevant probabilities are forced to be less than 1
+
+      // logit Probability section
+      //logitP_egg_riv(t-1, i)  = logitP_egg_riv_mean;  // * P_eggTriv_t(t-1) * P_eggTriv_pop(i)
+      //logitP_riv_riv(t-1, i)  = logitP_riv_riv_mean;  // * P_rivTriv_t(t-1) * P_rivTriv_pop(i);
+      //logitP_riv_sea1(t-1, i) = logitP_riv_sea1_mean;
+      //logitP_riv_ad1(t-1, i) = logitP_riv_sea1(t-1, i) + logitP_sea1_ad1_mean;
+
+      logitP_sea1_ad(t-1,i) = logitP_sea1_ad_mean + logitP_sea1_ad_pop(i);
+
       // River
-      N_egg_surviving(t-1, i) = N_egg(t-1,i) * P_egg_riv_mean; // * P_eggTriv_t(t-1) * P_eggTriv_pop(i)
-      N_staying_in_river(t-1, i) = N_riv(t-1,i) * P_riv_riv_mean; // * P_rivTriv_t(t-1) * P_rivTriv_pop(i);
+      N_egg_surviving(t-1, i) = N_egg(t-1,i) * P_egg_riv_mean;
+      N_staying_in_river(t-1, i) = N_riv(t-1,i) * P_riv_riv_mean;
       N_riv(t,i) = N_egg_surviving(t-1, i) + N_staying_in_river(t-1, i);
 
       // Sea 1
-      //N_sea1_surviving(t-1, i) = (N_riv(t-1,i)-N_staying_in_river(t-1, i)) * P_riv_ad1_mean;  // NOT WORKING!!!
-      N_sea1_surviving(t-1, i) = N_riv(t-1,i) * P_riv_sea1_mean;  // * P_riv_ad1_t(t-1) * P_riv_ad1_pop(i) ;
+      N_sea1_surviving(t-1, i) = (N_riv(t-1,i)-N_staying_in_river(t-1, i)) * P_riv_sea1_mean;  // NOT WORKING!!!
+      //N_sea1_surviving(t-1, i) = N_riv(t-1,i) * P_riv_sea1_mean;  // * P_riv_ad1_t(t-1) * P_riv_ad1_pop(i) ;
 
       // Adults returning sea age 1
-      jnll -= dnorm(lnN_ad(t,i,0), log(N_sea1_surviving(t-1, i)), exp(lnSD_lnN_add_residual), true);
+          // P_sea1_ad:
+      expectation = N_sea1_surviving(t-1, i) * exp(logitP_sea1_ad(t-1,i))/(Type(1.0) + exp(logitP_sea1_ad(t-1,i)));
+      jnll -= dnorm(lnN_ad(t,i,0), log(expectation), exp(lnSD_lnN_add_residual), true);
 
-      // Sea age 2:
-      //N_ad(t,i,1) = N_ad(t-1,i,1) * P_sea1Tad_mean;  // * P_sea1Tad_t(t-1) * P_sea1Tad_pop(i);
-      //jnll -= dnorm(lnN_ad(t,i,1), log(expectation), exp(lnSD_lnN_add_residual), true);
     }}
 
+  // Sea 2
+  for(t=2;t<n_t;t++){
+    for(i=0;i<n_pop;i++){
 
+    // Sea 2
+    N_sea2_surviving(t-2, i) = N_sea1_surviving(t-2, i) * P_sea1_sea2_mean;  // * P_riv_ad1_t(t-1) * P_riv_ad1_pop(i) ;
+
+    // Adults returning sea age 2
+    expectation = N_sea2_surviving(t-2, i);
+    jnll -= dnorm(lnN_ad(t,i,1), log(expectation), exp(lnSD_lnN_add_residual), true);
+
+    }}
 
 
 
@@ -189,10 +236,12 @@ Type objective_function<Type>::operator() ()
     jnll -= dnorm(logitP_sea0Tad_t(t-1), Type(0.0), exp(lnSD_r_yrs), true);
   }
 
-  for(j=0;j<n_pop;j++){
-    jnll -= dnorm(r_pop(j), Type(0.0), exp(lnSD_r_pop), true);
-  }
   */
+
+  // stable pop diff
+  for(i=0;i<n_pop;i++){
+    jnll -= dnorm(logitP_sea1_ad_pop(i), Type(0.0), exp(lnSD_logitP_sea1_ad_pop), true);
+  }
 
 
 
