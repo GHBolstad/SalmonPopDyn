@@ -36,7 +36,10 @@ Type objective_function<Type>::operator() ()
   DATA_ARRAY(lnNfem_VR_data);        // Data array of dimensions n_years x n_populations x n_weight_class
   DATA_ARRAY(lnNfem_SE_VR_data);     // Data array of dimensions n_years x n_populations x n_weight_class
   DATA_ARRAY(ln_mean_kg_VR_data);    // Data array of dimensions n_years x n_populations x n_weight_class
-  DATA_ARRAY(Nfem_catched_VR_data);  // !!!!! change this to log proporiton catched !!!!!!
+  DATA_ARRAY(Nfem_catched_VR_data);
+
+  // Measurement error correction factor
+  PARAMETER(ln_SEcorrection); //Maybe it would be more correct to use the error variance
 
 
   // Priors for initial population sizes
@@ -56,19 +59,19 @@ Type objective_function<Type>::operator() ()
   // Observation model for Nfem
   for(t=1;t<n_t;t++){
     for(i=0;i<n_pop;i++){
-        jnll -= dnorm(lnNfem_VR_data(t, i, 0), lnN_ad(t,i,0), lnNfem_SE_VR_data(t,i,0), true);
+        jnll -= dnorm(lnNfem_VR_data(t, i, 0), lnN_ad(t,i,0), lnNfem_SE_VR_data(t,i,0)*exp(ln_SEcorrection), true);
       }}
 
   for(t=2;t<n_t;t++){
     for(i=0;i<n_pop;i++){
       if(life_history(i) != 1){
-        jnll -= dnorm(lnNfem_VR_data(t, i, 1), lnN_ad(t,i,1), lnNfem_SE_VR_data(t,i,1), true);
+        jnll -= dnorm(lnNfem_VR_data(t, i, 1), lnN_ad(t,i,1), lnNfem_SE_VR_data(t,i,1)*exp(ln_SEcorrection), true);
       }}}
 
   for(t=3;t<n_t;t++){
     for(i=0;i<n_pop;i++){
       if(life_history(i) == 3){
-        jnll -= dnorm(lnNfem_VR_data(t, i, 2), lnN_ad(t,i,2), lnNfem_SE_VR_data(t,i,2), true);
+        jnll -= dnorm(lnNfem_VR_data(t, i, 2), lnN_ad(t,i,2), lnNfem_SE_VR_data(t,i,2)*exp(ln_SEcorrection), true);
       }}}
 
 
@@ -82,12 +85,12 @@ Type objective_function<Type>::operator() ()
   N_egg.fill(0.0);
   for(t=0;t<n_t;t++){
     for(i=0;i<n_pop;i++){
-        N_egg(t,i) += exp(ln_mean_kg_VR_data(t,i,0)+log(Type(1450.0))+lnN_ad(t,i,0));
+        N_egg(t,i) += exp(ln_mean_kg_VR_data(t,i,0)+log(Type(1450.0))+log(N_ad(t,i,0)-Nfem_catched_VR_data(t,i,0)));
       if(life_history(i) != 1){
-        N_egg(t,i) += exp(ln_mean_kg_VR_data(t,i,1)+log(Type(1450.0))+lnN_ad(t,i,1));
+        N_egg(t,i) += exp(ln_mean_kg_VR_data(t,i,1)+log(Type(1450.0))+log(N_ad(t,i,1)-Nfem_catched_VR_data(t,i,1)));
       }
       if(life_history(i) == 3){
-        N_egg(t,i) += exp(ln_mean_kg_VR_data(t,i,2)+log(Type(1450.0))+lnN_ad(t,i,2));
+        N_egg(t,i) += exp(ln_mean_kg_VR_data(t,i,2)+log(Type(1450.0))+log(N_ad(t,i,2)-Nfem_catched_VR_data(t,i,2)));
       }
       //N_egg(t,i) += mean_kg_observed(t,i,0)*Type(1450.0)*(Type(1.0)*N_ad(t,i,0)+Type(0.0)*N_ad(t,i,1));
       //N_egg(t,i) += mean_kg_observed(t,i,1)*Type(1450.0)*(Type(0.0)*N_ad(t,i,0)+Type(1.0)*N_ad(t,i,1));
@@ -107,25 +110,28 @@ Type objective_function<Type>::operator() ()
   PARAMETER(lnP_riv_ad3_mean);
 
   // Fixed effects (variances)
-    // residual
-    PARAMETER(lnSD_lnN_add_residual);
+    // residual: time within pop
+    PARAMETER(lnSD_lnN_ad1_residual);
+    PARAMETER(lnSD_lnN_ad2_residual);
+    PARAMETER(lnSD_lnN_ad3_residual);
     // time
-    PARAMETER(lnSD_lnP_riv_sea1_t);
-    PARAMETER(lnSD_lnP_sea1_sea2_t);
+    PARAMETER(lnSD_lnP_riv_ad1_t);
+    PARAMETER(lnSD_lnP_riv_ad2_t);
+    PARAMETER(lnSD_lnP_riv_ad3_t);
     // pop
     PARAMETER(lnSD_lnP_riv_ad1_pop);
     PARAMETER(lnSD_lnP_riv_ad2_pop);
-    //PARAMETER(lnSD_lnP_riv_ad3_pop);
+    PARAMETER(lnSD_lnP_riv_ad3_pop);
 
   // Random effects
     // time
-    PARAMETER_VECTOR(lnP_riv_sea1_t);
-    PARAMETER_VECTOR(lnP_sea1_sea2_t);
+    PARAMETER_VECTOR(lnP_riv_ad1_t);
+    PARAMETER_VECTOR(lnP_riv_ad2_t);
+    PARAMETER_VECTOR(lnP_riv_ad3_t);
     // pop
     PARAMETER_VECTOR(lnP_riv_ad1_pop);
     PARAMETER_VECTOR(lnP_riv_ad2_pop);
-    //PARAMETER_VECTOR(lnP_riv_ad3_pop);
-
+    PARAMETER_VECTOR(lnP_riv_ad3_pop);
 
   // Starting values
   PARAMETER_VECTOR(lnN_riv_start);
@@ -150,7 +156,7 @@ Type objective_function<Type>::operator() ()
 
 
   ///// Priors ////
-  jnll -= dnorm(lnP_egg_riv_mean, Type(-6.0), Type(0.5), true);
+  //jnll -= dnorm(lnP_egg_riv_mean, Type(-6.0), Type(0.5), true);
   //jnll -= dnorm(lnP_riv_riv_mean, Type(-0.2), Type(0.5), true); //this must be constrained to be less than zero. Either use cloglog or hard constraints
 
   Type expectation=0;
@@ -164,12 +170,12 @@ Type objective_function<Type>::operator() ()
       // log Probability section
       lnP_egg_riv(t-1, i)  = lnP_egg_riv_mean;  // * P_eggTriv_t(t-1) * P_eggTriv_pop(i)
       lnP_riv_riv(t-1, i)  = lnP_riv_riv_mean;  // * P_rivTriv_t(t-1) * P_rivTriv_pop(i);
-      lnP_riv_ad1(t-1, i)   = lnP_riv_ad1_mean + lnP_riv_ad1_pop(i) + lnP_riv_sea1_t(t-1);
+        lnP_riv_ad1(t-1, i) = lnP_riv_ad1_mean + lnP_riv_ad1_pop(i) + lnP_riv_ad1_t(t-1);
       if(t>1 && life_history(i) != 1){
-        lnP_riv_ad2(t-2, i) = lnP_riv_ad2_mean + lnP_riv_ad2_pop(i) + lnP_riv_sea1_t(t-2) + lnP_sea1_sea2_t(t-2);
+        lnP_riv_ad2(t-2, i) = lnP_riv_ad2_mean + lnP_riv_ad2_pop(i) + lnP_riv_ad2_t(t-2);
       }
       if(t>2 && life_history(i) == 3){
-        lnP_riv_ad3(t-3, i) = lnP_riv_ad3_mean;// + lnP_riv_ad3_pop(i);// + lnP_riv_sea1_t(t-3) + lnP_sea1_sea2_t(t-3)*Type(2.0);
+        lnP_riv_ad3(t-3, i) = lnP_riv_ad3_mean + lnP_riv_ad3_pop(i) + lnP_riv_ad3_t(t-3);
       }
 
       // River
@@ -179,38 +185,35 @@ Type objective_function<Type>::operator() ()
 
       // Adults returning sea age 1
       expectation = lnN_riv(t-1,i) + lnP_riv_ad1(t-1,i);
-      jnll -= dnorm(lnN_ad(t,i,0), expectation, exp(lnSD_lnN_add_residual), true);
+      jnll -= dnorm(lnN_ad(t,i,0), expectation, exp(lnSD_lnN_ad1_residual), true);
 
       // Adults returning sea age 2
       if(t>1 && life_history(i) != 1){
-      expectation = lnN_riv(t-2,i) + lnP_riv_ad2(t-2,i);
-      jnll -= dnorm(lnN_ad(t,i,1), expectation, exp(lnSD_lnN_add_residual), true);
+        expectation = lnN_riv(t-2,i) + lnP_riv_ad2(t-2,i);
+       jnll -= dnorm(lnN_ad(t,i,1), expectation, exp(lnSD_lnN_ad2_residual), true);
       }
 
       // Adults returning sea age 3
       if(t>2 && life_history(i) == 3){
         expectation = lnN_riv(t-3,i) + lnP_riv_ad3(t-3,i);
-        jnll -= dnorm(lnN_ad(t,i,2), expectation, exp(lnSD_lnN_add_residual), true);
+        jnll -= dnorm(lnN_ad(t,i,2), expectation, exp(lnSD_lnN_ad3_residual), true);
       }
-
     }}
 
 
+  // time
   for(t=1;t<n_t;t++){
-    jnll -= dnorm(lnP_riv_sea1_t(t-1), Type(0.0), exp(lnSD_lnP_riv_sea1_t), true);
-    if(t>1) jnll -= dnorm(lnP_sea1_sea2_t(t-2), Type(0.0), exp(lnSD_lnP_sea1_sea2_t), true);
+            jnll -= dnorm(lnP_riv_ad1_t(t-1), Type(0.0), exp(lnSD_lnP_riv_ad1_t), true);
+    if(t>1) jnll -= dnorm(lnP_riv_ad2_t(t-2), Type(0.0), exp(lnSD_lnP_riv_ad2_t), true);
+    if(t>2) jnll -= dnorm(lnP_riv_ad2_t(t-3), Type(0.0), exp(lnSD_lnP_riv_ad3_t), true);
   }
 
 
   // stable pop diff
   for(i=0;i<n_pop;i++){
-    jnll -= dnorm(lnP_riv_ad1_pop(i), Type(0.0), exp(lnSD_lnP_riv_ad1_pop), true);
-    if(life_history(i) != 1){
-      jnll -= dnorm(lnP_riv_ad2_pop(i), Type(0.0), exp(lnSD_lnP_riv_ad2_pop), true);
-    }
-    // if(life_history(i) == 3){
-    //   jnll -= dnorm(lnP_riv_ad3_pop(i), Type(0.0), exp(lnSD_lnP_riv_ad3_pop), true);
-    // }
+                             jnll -= dnorm(lnP_riv_ad1_pop(i), Type(0.0), exp(lnSD_lnP_riv_ad1_pop), true);
+    if(life_history(i) != 1) jnll -= dnorm(lnP_riv_ad2_pop(i), Type(0.0), exp(lnSD_lnP_riv_ad2_pop), true);
+    if(life_history(i) == 3) jnll -= dnorm(lnP_riv_ad3_pop(i), Type(0.0), exp(lnSD_lnP_riv_ad3_pop), true);
   }
 
 
