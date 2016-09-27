@@ -37,6 +37,8 @@ Type objective_function<Type>::operator() ()
   DATA_ARRAY(lnNfem_SE_VR_data);     // Data array of dimensions n_years x n_populations x n_weight_class
   DATA_ARRAY(ln_mean_kg_VR_data);    // Data array of dimensions n_years x n_populations x n_weight_class
   DATA_ARRAY(Nfem_catched_VR_data);
+  DATA_VECTOR(kg_innsig); // used for density dependence
+  DATA_MATRIX(Laks_tot_vekt);
 
   // Measurement error correction factor
   PARAMETER(ln_SEcorrection); //Maybe it would be more correct to use the error variance
@@ -79,22 +81,14 @@ Type objective_function<Type>::operator() ()
   // So far I just use the raw estimates, but I shuld be able to get SE on these, based on P and N of each weight class
   array<Type> ln_mean_kg = ln_mean_kg_VR_data;
 
-  // Calculating number of egg
-  matrix<Type> lnN_egg(n_t, n_pop);
-  matrix<Type> N_egg(n_t, n_pop);
-  N_egg.fill(0.0);
+  // Calculating number total kg of adults
+  matrix<Type> kg_ad(n_t, n_pop);
+  kg_ad.fill(0.0);
   for(t=0;t<n_t;t++){
     for(i=0;i<n_pop;i++){
-        N_egg(t,i) += exp(ln_mean_kg_VR_data(t,i,0)+log(Type(1450.0))+log(N_ad(t,i,0)-Nfem_catched_VR_data(t,i,0)));
-      if(life_history(i) != 1){
-        N_egg(t,i) += exp(ln_mean_kg_VR_data(t,i,1)+log(Type(1450.0))+log(N_ad(t,i,1)-Nfem_catched_VR_data(t,i,1)));
-      }
-      if(life_history(i) == 3){
-        N_egg(t,i) += exp(ln_mean_kg_VR_data(t,i,2)+log(Type(1450.0))+log(N_ad(t,i,2)-Nfem_catched_VR_data(t,i,2)));
-      }
-      //N_egg(t,i) += mean_kg_observed(t,i,0)*Type(1450.0)*(Type(1.0)*N_ad(t,i,0)+Type(0.0)*N_ad(t,i,1));
-      //N_egg(t,i) += mean_kg_observed(t,i,1)*Type(1450.0)*(Type(0.0)*N_ad(t,i,0)+Type(1.0)*N_ad(t,i,1));
-      lnN_egg(t,i) = log(N_egg(t,i));
+                               kg_ad(t,i) += exp(ln_mean_kg_VR_data(t,i,0)+lnN_ad(t,i,0));
+      if(life_history(i) != 1) kg_ad(t,i) += exp(ln_mean_kg_VR_data(t,i,1)+lnN_ad(t,i,1));
+      if(life_history(i) == 3) kg_ad(t,i) += exp(ln_mean_kg_VR_data(t,i,2)+lnN_ad(t,i,2));
     }}
 
   /////////////////////////////////
@@ -103,11 +97,13 @@ Type objective_function<Type>::operator() ()
 
 
   // Fixed effects (means)
-  PARAMETER(lnP_egg_riv_mean);        //Type lnP_egg_riv_mean   = -exp(-clogP_egg_riv_mean); //to avoid probabilities above 1
-  PARAMETER(lnP_riv_riv_mean);        //Type P_riv_riv_mean   = exp(logitP_riv_riv_mean)/(1+exp(logitP_riv_riv_mean));
+  PARAMETER(mean_int_kg_riv);
+  PARAMETER(ln_slope_kg_riv);         Type slope_kg_riv = exp(ln_slope_kg_riv);
+  PARAMETER(lnP_riv_riv_mean);        //Type lnP_egg_riv_mean   = -exp(-clogP_egg_riv_mean); //to avoid probabilities above 1
   PARAMETER(lnP_riv_ad1_mean);        //Type P_sea1_ad_mean   = exp(logitP_sea1_ad_mean)/(1+exp(logitP_sea1_ad_mean));
   PARAMETER(lnP_riv_ad2_mean);
   PARAMETER(lnP_riv_ad3_mean);
+
 
   // Fixed effects (variances)
     // residual: time within pop
@@ -146,13 +142,12 @@ Type objective_function<Type>::operator() ()
   matrix<Type> lnN_sea1_surviving(n_t-1, n_pop);
   matrix<Type> lnN_sea2_surviving(n_t-2, n_pop);
 
-  matrix<Type> lnP_egg_riv(n_t-1, n_pop);
+  matrix<Type> int_kg_riv(n_t-1, n_pop);
   matrix<Type> lnP_riv_riv(n_t-1, n_pop);
   matrix<Type> lnP_riv_sea1(n_t-1, n_pop);
   matrix<Type> lnP_riv_ad1(n_t-1, n_pop);
   matrix<Type> lnP_riv_ad2(n_t-2, n_pop);
   matrix<Type> lnP_riv_ad3(n_t-3, n_pop);
-
 
 
   ///// Priors ////
@@ -163,13 +158,12 @@ Type objective_function<Type>::operator() ()
 
   //// Model ///
 
-  // River and Sea 1
   for(t=1;t<n_t;t++){
     for(i=0;i<n_pop;i++){
 
       // log Probability section
-      lnP_egg_riv(t-1, i)  = lnP_egg_riv_mean;  // * P_eggTriv_t(t-1) * P_eggTriv_pop(i)
-      lnP_riv_riv(t-1, i)  = lnP_riv_riv_mean;  // * P_rivTriv_t(t-1) * P_rivTriv_pop(i);
+        int_kg_riv(t-1, i)  = mean_int_kg_riv;  // * P_eggTriv_t(t-1) * P_eggTriv_pop(i)
+        lnP_riv_riv(t-1, i) = lnP_riv_riv_mean;  // * P_rivTriv_t(t-1) * P_rivTriv_pop(i);
         lnP_riv_ad1(t-1, i) = lnP_riv_ad1_mean + lnP_riv_ad1_pop(i) + lnP_riv_ad1_t(t-1);
       if(t>1 && life_history(i) != 1){
         lnP_riv_ad2(t-2, i) = lnP_riv_ad2_mean + lnP_riv_ad2_pop(i) + lnP_riv_ad2_t(t-2);
@@ -179,7 +173,7 @@ Type objective_function<Type>::operator() ()
       }
 
       // River
-      lnN_egg_surviving(t-1, i) = lnN_egg(t-1,i) + lnP_egg_riv(t-1,i);
+      lnN_egg_surviving(t-1, i) = int_kg_riv(t-1, i) + log(kg_ad(t-1,i))*slope_kg_riv;
       lnN_staying_in_river(t-1, i) = lnN_riv(t-1,i) + lnP_riv_riv(t-1, i);
       lnN_riv(t,i) = log(exp(lnN_egg_surviving(t-1, i)) + exp(lnN_staying_in_river(t-1, i)));
 
